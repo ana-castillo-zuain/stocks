@@ -1,0 +1,792 @@
+---
+title: "Analisis Acciones"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Librerias
+
+```{r}
+library(tidyverse)
+library(quantmod)
+```
+# Referencias sobre Analisis Tecnico
+
+Basico: https://corporatefinanceinstitute.com/resources/career-map/sell-side/capital-markets/technical-analysis/
+
+Velas: https://bookdown.org/kochiuyu/technical-analysis-with-r-second-edition2/candle-stick-pattern.html
+
+Dojis: https://bookdown.org/kochiuyu/technical-analysis-with-r-second-edition2/doji.html
+
+Estrategias: https://trendspider.com/learning-center/technical-analysis-strategies/
+
+Estrategias de Cruces de Promedios Moviles: implementar gloden cross
+
+Estrategia MACD: implementar regla sobre cero (https://www.youtube.com/watch?v=W78Xg_pnJ1A)
+
+Estrategia RSI: implementar regla 30-70
+
+Avanzado (basado en el paquete "", no lo usamos): https://rpubs.com/jwcb1025/quantstrat_trading_strategy
+
+Analisis Tecnico con R: https://bookdown.org/kochiuyu/technical-analysis-with-r-second-edition2/
+
+Usando xts: https://rpubs.com/odenipinedo/manipulating-time-series-data-with-xts-and-zoo-in-R
+
+# Datos
+
+Fuente: https://www.kaggle.com/datasets/jakewright/9000-tickers-of-stock-market-data-full-history?resource=download
+
+```{r}
+# datos<-read_csv("/home/andresfaral/Downloads/all_stock_data.csv")
+# dim(datos)
+# tabla<-table(datos$Ticker)
+# maximo<-max(tabla)
+# tickers<-names(tabla[tabla==maximo])
+# datos.filt<-datos %>% filter(Ticker %in% tickers)
+# datos.filt
+# save(datos.filt,file="stock_comp")
+# Cargo datos de Empresas con la historia COMPLETA
+load(file="/Users/anapa/OneDrive/Escritorio/facu/problemas/stock_comp")
+datos.filt
+```
+
+
+# EDA
+
+## Summary
+
+```{r}
+summary(datos.filt)
+```
+
+## Tabla de tickers
+
+```{r}
+table(datos.filt$Ticker)
+```
+
+
+
+# Usando quantmod
+
+Fuente: https://www.quantmod.com/
+
+## Convierto una serie a xts para manejarlo con quantmod
+
+```{r}
+# convierto 1 accion a xts
+datos.filt2<-datos.filt %>% filter(Ticker=="KO") # just coke
+KO.xts<- xts(datos.filt2[,c(3:7)],order.by = datos.filt2$Date)
+#
+class(KO.xts)
+head(KO.xts)
+```
+
+# Visualizacion usando dygraphs
+
+```{r}
+require(dygraphs)
+
+dygraph(KO.xts$Close, main = "Coca Cola") %>%
+  dyAxis("y", label = "Precio") %>%
+  dyOptions(stackedGraph = FALSE)
+```
+
+
+## Visualizando Precio al cierre y Volumen
+
+```{r}
+dygraph(KO.xts) %>%
+  dySeries("Close", label = "Close", color = "#0198f9", drawPoints = TRUE, pointSize = 3, pointShape = "square") %>%
+  dySeries("Volume", label = "Trade Volume (M)", stepPlot = TRUE, fillGraph = TRUE, color = "#FF9900", axis = "y2")
+```
+
+
+## Traigo la accion de google de yahoo finance
+
+```{r}
+getSymbols("GOOG",src="yahoo") # from google finance
+class(GOOG)
+tail(GOOG)
+```
+
+# Charts financieros
+
+## Las series de OHLC
+
+```{r}
+chartSeries(KO.xts) # toda la serie
+chartSeries(KO.xts,subset="2000") # un anio especifico
+chartSeries(KO.xts,subset="2000-01") # un anio y mes especifico
+chartSeries(KO.xts,subset="2000-01::2000-03") # un periodo
+chartSeries(KO.xts,subset="last 12 months") # ultimo anio
+
+```
+
+## Agregado de Indicadores
+
+Mirar:
+
+Moving Averages: https://en.wikipedia.org/wiki/Moving_average
+
+EMA: https://en.wikipedia.org/wiki/Exponential_smoothing
+
+EMA en TTR: https://bookdown.org/kochiuyu/technical-analysis-with-r-second-edition2/exponential-moving-average-ema.html#ttr-1
+
+```{r}
+# por separado
+chartSeries(GOOG,subset="2010")
+addEMA(200)
+addEMA(50)
+addEMA(7)
+# todo junto
+chartSeries(GOOG,subset="2010",TA="addEMA(200);addEMA(50);addEMA(7)")
+
+```
+
+# Calculando Indicadores
+
+```{r}
+ema7<-EMA(GOOG$GOOG.Open,7)
+class(ema7)
+head(ema7,10)
+```
+
+
+## Mas visualizaciones
+
+```{r}
+candleChart(GOOG[1:20],multi.col=TRUE,theme="white")
+candleChart(GOOG[10:14],multi.col=FALSE,theme="white")
+chartSeries(GOOG[1:300,])
+addMACD()
+addBBands()
+barChart(KO.xts)
+barChart(KO.xts[1:30])
+chartSeries(to.weekly(KO.xts),up.col='white',dn.col='blue')
+chartSeries(to.monthly(KO.xts),up.col='white',dn.col='blue')
+chartSeries(to.yearly(KO.xts),up.col='white',dn.col='blue')
+chartSeries(KO.xts,TA="addRSI()")
+```
+
+# Estrategias de Trading
+
+Se compra 1 accion con la señial bulish y se vende 1 accion con la selian bearish
+Se empiezo siempre con una compra
+Se comienza con saldo 0, una compra disminuye/aumenta el saldo en el precio de compra/venta
+No puede haber mas ventas que compras (no se puede shortear)
+Al final del periodo se vende todo el stock (si hubiera)
+El resultado (target) es el saldo al final del 
+
+Deteccion de dojis
+```{r}
+datos.filt2.doji <- datos.filt2 %>%
+  mutate(
+    dragonfly = ifelse(
+      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) > 0.01),
+      1, 0
+    ),
+    gravestone = ifelse(
+      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) > 0.01),
+      1, 0
+    )
+  )
+
+sum(datos.filt2.doji$dragonfly)
+sum(datos.filt2.doji$gravestone)
+```
+
+```{r}
+datos.filt2.doji <- datos.filt2 %>%
+  mutate(
+    dragonfly_true = ifelse(),
+    gravestone = ifelse(
+      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) > 0.01),
+      1, 0
+    )
+  )
+```
+
+```{r}
+datos.filt2.doji <- datos.filt2.doji %>%
+  mutate(increase_nd = ifelse(is.na(lead(Close)), FALSE, Close < lead(Close)))
+
+p_pob_increase <- sum(datos.filt2.doji$increase_nd)/nrow(datos.filt2.doji)
+
+datos.filt2.doji.dragon <- datos.filt2.doji %>%
+  filter(dragonfly == 1)
+
+p_dragon_increase <- sum(datos.filt2.doji.dragon$increase_nd)/nrow(datos.filt2.doji.dragon)
+
+datos.filt2.doji.grave <- datos.filt2.doji %>%
+  filter(gravestone == 1)
+
+p_grave_decrease <- 1 - sum(datos.filt2.doji.grave$increase_nd)/nrow(datos.filt2.doji.grave)
+
+p_pob_decrease <- 1 - p_pob_increase
+
+p_pob_increase
+p_dragon_increase
+p_pob_decrease
+p_grave_decrease
+```
+
+```{r}
+datos.filt2.doji <- datos.filt2.doji %>%
+  mutate(porc_diff_nd = ifelse(is.na(lead(Close)), 0, (lead(Close) - Close)/Close))
+
+p_mean_diff <- mean(datos.filt2.doji$porc_diff_nd)
+
+datos.filt2.doji.dragon <- datos.filt2.doji %>%
+  filter(dragonfly == 1)
+
+mean_dragon_diff <- mean(datos.filt2.doji.dragon$porc_diff_nd)
+
+datos.filt2.doji.grave <- datos.filt2.doji %>%
+  filter(gravestone == 1)
+
+mean_grave_diff <- mean(datos.filt2.doji.grave$porc_diff_nd)
+```
+
+
+```{r}
+library(dplyr)
+
+calcular_dif_porcentual <- function(datos) {
+  datos <- datos %>%
+    mutate(
+      diff_1 = (lead(Close, 1) - Close) / Close,
+      diff_2 = (lead(Close, 2) - Close) / Close,
+      diff_3 = (lead(Close, 3) - Close) / Close,
+      diff_4 = (lead(Close, 4) - Close) / Close,
+      diff_5 = (lead(Close, 5) - Close) / Close,
+      diff_6 = (lead(Close, 6) - Close) / Close,
+      diff_7 = (lead(Close, 7) - Close) / Close
+    )
+
+  # Función auxiliar para calcular los promedios de diferencias
+  calcular_promedios <- function(df) {
+    colMeans(df %>% select(starts_with("diff_")), na.rm = TRUE)
+  }
+
+  # Calcular promedios para la población total, con Gravestone y con Dragonfly
+  total_mean <- calcular_promedios(datos)
+  grave_mean <- calcular_promedios(datos %>% filter(gravestone == 1))
+  dragon_mean <- calcular_promedios(datos %>% filter(dragonfly == 1))
+
+  # Crear la tabla final
+  tabla_resultado <- rbind(
+    "Total" = total_mean,
+    "Gravestone Doji" = grave_mean,
+    "Dragonfly Doji" = dragon_mean
+  )
+
+  return(as.data.frame(tabla_resultado))
+}
+
+# Uso de la función
+tabla_doji <- calcular_dif_porcentual(datos.filt2.doji)
+print(tabla_doji)
+
+```
+```{r}
+
+datos.filt2.doji.gd <- datos.filt2.doji %>%
+  filter(dragonfly == 1 | gravestone == 1)
+
+ggplot(datos.filt2.doji.gd, aes(x = factor(dragonfly)
+                                , y = porc_diff_nd, fill = dragonfly)) +
+  geom_violin(fill = "skyblue", alpha = 0.6, trim = FALSE) +
+  theme_minimal() +
+  labs(title = "")
+
+```
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+# Filtrar los datos
+datos.filt2.doji.gd <- datos.filt2.doji %>%
+  filter(dragonfly == 1 | gravestone == 1)
+
+# Crear el gráfico de CDF
+ggplot(datos.filt2.doji.gd, aes(x = porc_diff_nd, color = factor(dragonfly + 2 * gravestone))) +
+  stat_ecdf(geom = "step", size = 1) +
+  scale_color_manual(values = c("blue", "red"), labels = c("Dragonfly", "Gravestone")) +
+  labs(title = "Comparación de CDFs",
+       x = "Porcentaje de Diferencia", 
+       y = "Probabilidad Acumulada", 
+       color = "Tipo de Doji") +
+  theme_minimal()
+
+
+```
+
+### Ampliamos la muestra
+
+```{r}
+
+tickers <- list('JNJ','PG','KO','BP','CVX')
+muestra <- datos.filt %>% 
+  filter(Ticker %in% tickers)
+
+muestra.doji <- muestra %>%
+  mutate(
+    dragonfly = ifelse(
+      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) > 0.01),
+      1, 0
+    ),
+    gravestone = ifelse(
+      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) > 0.01),
+      1, 0
+    )
+  )
+
+sum(muestra.doji$dragonfly)
+sum(muestra.doji$gravestone)
+```
+
+```{r}
+muestra.doji <- muestra.doji %>%
+  mutate(increase_nd = ifelse(is.na(lead(Close)), FALSE, Close < lead(Close))) %>%
+  arrange(Ticker)
+
+p_pob_increase <- sum(muestra.doji$increase_nd)/nrow(muestra.doji)
+
+muestra.doji.dragon <- muestra.doji %>%
+  filter(dragonfly == 1)
+
+p_dragon_increase <- sum(muestra.doji.dragon$increase_nd)/nrow(muestra.doji.dragon)
+
+muestra.doji.grave <- muestra.doji %>%
+  filter(gravestone == 1)
+
+p_grave_decrease <- 1 - sum(muestra.doji.grave$increase_nd)/nrow(muestra.doji.grave)
+
+p_pob_decrease <- 1 - p_pob_increase
+
+p_pob_increase
+p_dragon_increase
+p_pob_decrease
+p_grave_decrease
+```
+```{r}
+muestra.doji <- muestra.doji %>%
+  mutate(porc_diff_nd = ifelse(is.na(lead(Close)), 0, (lead(Close) - Close)/Close))
+
+p_mean_diff <- mean(muestra.doji$porc_diff_nd)
+
+muestra.doji.dragon <- muestra.doji %>%
+  filter(dragonfly == 1)
+
+mean_dragon_diff <- mean(muestra.doji.dragon$porc_diff_nd)
+
+muestra.doji.grave <- muestra.doji %>%
+  filter(gravestone == 1)
+
+mean_grave_diff <- mean(muestra.doji.grave$porc_diff_nd)
+```
+
+```{r}
+calcular_dif_porcentual <- function(datos) {
+  datos <- datos %>%
+    mutate(
+      diff_1 = (lead(Close, 1) - Close) / Close,
+      diff_2 = (lead(Close, 2) - Close) / Close,
+      diff_3 = (lead(Close, 3) - Close) / Close,
+      diff_4 = (lead(Close, 4) - Close) / Close,
+      diff_5 = (lead(Close, 5) - Close) / Close,
+      diff_6 = (lead(Close, 6) - Close) / Close,
+      diff_7 = (lead(Close, 7) - Close) / Close
+    )
+
+  # Función auxiliar para calcular los promedios de diferencias
+  calcular_promedios <- function(df) {
+    colMeans(df %>% select(starts_with("diff_")), na.rm = TRUE)
+  }
+
+  # Calcular promedios para la población total, con Gravestone y con Dragonfly
+  total_mean <- calcular_promedios(datos)
+  grave_mean <- calcular_promedios(datos %>% filter(gravestone == 1))
+  dragon_mean <- calcular_promedios(datos %>% filter(dragonfly == 1))
+
+  # Crear la tabla final
+  tabla_resultado <- rbind(
+    "Total" = total_mean,
+    "Gravestone Doji" = grave_mean,
+    "Dragonfly Doji" = dragon_mean
+  )
+
+  return(as.data.frame(tabla_resultado))
+}
+
+# Uso de la función
+tabla_acciones <- calcular_dif_porcentual(muestra.doji)
+print(tabla_acciones)
+```
+```{r}
+muestra.doji.gd <- muestra.doji %>%
+  filter(dragonfly == 1 | gravestone == 1)
+
+ggplot(muestra.doji.gd, aes(x = factor(dragonfly)
+                                , y = porc_diff_nd, fill = dragonfly)) +
+  geom_violin(fill = "skyblue", alpha = 0.6, trim = FALSE) +
+  theme_minimal() +
+  labs(title = "")
+```
+```{r}
+muestra.doji.gd <- muestra.doji %>%
+  filter(dragonfly == 1 | gravestone == 1)
+
+
+ggplot(muestra.doji.gd, aes(x = porc_diff_nd, color = factor(dragonfly + 2 * gravestone))) +
+  stat_ecdf(geom = "step", size = 1) +
+  scale_color_manual(values = c("blue", "red"), labels = c("Dragonfly", "Gravestone")) +
+  labs(title = "Comparación de CDFs",
+       x = "Porcentaje de Diferencia", 
+       y = "Probabilidad Acumulada", 
+       color = "Tipo de Doji") +
+  theme_minimal()
+
+```
+###Test de Hipotesis
+
+Para cada tipo de Doji, compararemos la proporción observada con la proporción general de la población utilizando una prueba de proporciones.
+
+Hipótesis para Dragonfly Doji
+
+H0: La probabilidad de aumento después de un Dragonfly Doji es igual a la probabilidad general de aumento (pdragon = ppob)
+Ha: La probabilidad de aumento después de un Dragonfly Doji es diferente de la probabilidad general (pdragon != ppob)
+
+Hipótesis para Gravestone Doji
+H0: La probabilidad de disminución después de un Gravestone Doji es igual a la probabilidad general de disminución (pgrave = ppob)
+Ha: La probabilidad de disminución después de un Gravestone Doji es diferente de la probabilidad general (pgrave != ppob)
+
+Prueba estadística
+
+```{r}
+# Calcular proporciones generales
+p_pob_increase <- sum(muestra.doji$increase_nd) / nrow(muestra.doji)
+p_pob_decrease <- 1 - p_pob_increase
+
+# Número de observaciones en cada subconjunto
+n_dragon <- nrow(muestra.doji.dragon)
+n_grave <- nrow(muestra.doji.grave)
+
+# Casos donde el precio aumentó después de un Dragonfly Doji
+x_dragon <- sum(muestra.doji.dragon$increase_nd)
+
+# Casos donde el precio disminuyó después de un Gravestone Doji
+x_grave <- sum(muestra.doji.grave$increase_nd)
+
+# Prueba de proporciones para Dragonfly Doji
+test_dragon <- prop.test(x_dragon, n_dragon, p = p_pob_increase, alternative = "two.sided")
+
+# Prueba de proporciones para Gravestone Doji
+test_grave <- prop.test(n_grave - x_grave, n_grave, p = p_pob_decrease, alternative = "two.sided")
+
+# Mostrar resultados
+test_dragon
+test_grave
+```
+
+
+```{r}
+datos.filt.doji <- datos.filt %>%
+  arrange(Ticker) %>%
+  mutate(
+    dragonfly = ifelse(
+      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) > 0.01),
+      1, 0
+    ),
+    gravestone = ifelse(
+      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) < 0.005) &
+      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) > 0.01),
+      1, 0
+    ),
+    increase_nd = ifelse(is.na(lead(Close)), FALSE, Close < lead(Close)),
+    porc_diff_nd = ifelse(is.na(lead(Close)), 0, (lead(Close) - Close)/Close)
+  )
+
+datos.filt.dragon <- datos.filt.doji %>%
+  filter(dragonfly == 1)
+
+datos.filt.grave <- datos.filt.doji %>%
+  filter(gravestone == 1)
+
+# Calcular proporciones generales
+p_pob_increase2 <- sum(datos.filt.doji$increase_nd) / nrow(datos.filt.doji)
+p_pob_decrease2 <- 1 - p_pob_increase2
+
+# Número de observaciones en cada subconjunto
+n_dragon2 <- nrow(datos.filt.dragon)
+n_grave2 <- nrow(datos.filt.grave)
+
+# Casos donde el precio aumentó después de un Dragonfly Doji
+x_dragon2 <- sum(datos.filt.dragon$increase_nd)
+
+# Casos donde el precio disminuyó después de un Gravestone Doji
+x_grave2 <- sum(datos.filt.grave$increase_nd)
+
+# Prueba de proporciones para Dragonfly Doji
+test_dragon2 <- prop.test(x_dragon2, n_dragon2, p = p_pob_increase2, alternative = "two.sided")
+
+# Prueba de proporciones para Gravestone Doji
+test_grave2 <- prop.test(n_grave2 - x_grave2, n_grave2, p = p_pob_decrease2, alternative = "two.sided")
+
+# Mostrar resultados
+test_dragon2
+test_grave2
+```
+```{r}
+# Calcular la media poblacional general
+pob_mean <- mean(datos.filt.doji$porc_diff_nd)
+
+# Prueba t para Dragonfly Doji
+test_dragon3 <- t.test(datos.filt.dragon$porc_diff_nd, 
+                       mu = pob_mean, 
+                       alternative = "two.sided")
+
+# Prueba t para Gravestone Doji
+test_grave3 <- t.test(datos.filt.grave$porc_diff_nd, 
+                       mu = pob_mean, 
+                       alternative = "two.sided")
+
+# Mostrar resultados
+test_dragon3
+test_grave3
+```
+### MACD
+
+```{r}
+# Load necessary library
+library(xts)
+
+# Example data (assuming df is your data frame)
+datos.filt2$Date <- as.Date(datos.filt2$Date)  # Convert Date column to Date type
+
+# Convert to xts object (excluding non-numeric columns)
+df_xts <- xts(datos.filt2[, -c(1,2)], order.by = datos.filt2$Date)
+
+# View the xts object
+print(df_xts)
+
+```
+```{r}
+
+macd50 <- EMA(df_xts$Close, 50)
+
+macd200 <- EMA(df_xts$Close, 200)
+
+macd50
+macd200
+#resta de los dos
+```
+```{r}
+library(xts)
+
+macddf <- data.frame(
+  Date = index(macd50),
+  ema50 = coredata(macd50),
+  ema200 = coredata(macd200)
+)
+
+macddf <- macddf %>%
+  mutate(ema50may = EMA - EMA.1 > 0,
+         cross = ifelse(ema50may != lead(ema50may),ifelse(ema50may == TRUE, -1, 1) , 0)) %>%
+  left_join(datos.filt2, by = "Date") 
+
+macddf_cross <- macddf %>%
+  filter(cross != 0)
+
+golden <- count(macddf_cross, cross == 1)
+
+```
+
+```{r}
+macddf_valid <- macddf %>%
+  filter(!is.na(Close), !is.na(cross))
+
+initial_state <- list(
+  cash = 10000,
+  stocks = 0,
+  saldo = 10000
+)
+
+# Acumulador paso a paso
+sim_list <- accumulate(
+  1:nrow(macddf_valid),
+  .init = initial_state,
+  .f = function(state, i) {
+    row <- macddf_valid[i, ]
+    
+    new_state <- state
+
+    if (!is.na(row$cross)) {
+      if (row$cross == 1) {
+        # Golden Cross → Comprar con todo el cash
+        new_state$stocks <- state$cash / row$Close
+        new_state$cash <- 0
+      } else if (row$cross == -1) {
+        # Death Cross → Vender todo
+        new_state$cash <- state$stocks * row$Close
+        new_state$stocks <- 0
+      }
+    }
+
+    # Recalcular el saldo total
+    new_state$saldo <- new_state$cash + new_state$stocks * row$Close
+    return(new_state)
+  }
+)
+
+# Convertir lista de estados a data frame
+sim_df <- bind_rows(sim_list[-1])  # sacar .init
+macddf_sim <- bind_cols(macddf_valid, sim_df)
+```
+
+```{r}
+
+n <- nrow(macddf_valid)
+macddf_valid$azar <- 0
+
+# Dividir en bloques
+bloques <- floor(n / 75)
+
+# Elegir una posición aleatoria dentro de cada bloque
+idx_1 <- sapply(0:(75 - 1), function(i) {
+  bloque_inicio <- i * bloques + 1
+  bloque_fin <- min((i + 1) * bloques, n)
+  sample(bloque_inicio:bloque_fin, 1)
+})
+
+# Asignar los 1
+macddf_valid$azar[idx_1] <- 1
+
+```
+
+```{r}
+sim_list_aux <- accumulate(
+  1:nrow(macddf_valid),
+  .init = initial_state,
+  .f = function(state, i) {
+    row <- macddf_valid[i, ]
+    
+    new_state <- state
+
+    if (!is.na(row$azar)) {
+      if (row$azar == 1) {
+        if(state$stocks == 0){
+          new_state$stocks <- state$cash / row$Close
+          new_state$cash <- 0
+        }
+        else if(state$stocks != 0){
+          new_state$cash <- state$stocks * row$Close
+          new_state$stocks <- 0
+        }
+      }
+    }
+
+    # Recalcular el saldo total
+    new_state$saldo <- new_state$cash + new_state$stocks * row$Close
+    return(new_state)
+  }
+)
+
+# Convertir lista de estados a data frame
+sim_df_aux <- bind_rows(sim_list_aux[-1])  # sacar .init
+macddf_sim_azar <- bind_cols(macddf_valid, sim_df_aux)
+```
+
+```{r}
+library(purrr)
+library(dplyr)
+
+# Lista para guardar los resultados finales de saldo
+resultados <- numeric(100)
+
+# Loop de 30 repeticiones
+for (k in 1:100) {
+  # Paso 1: generar señales azarosas distribuidas
+  n <- nrow(macddf_valid)
+  macddf_valid$azar <- 0
+  bloques <- floor(n / 75)
+  idx_1 <- sapply(0:(75 - 1), function(i) {
+    bloque_inicio <- i * bloques + 1
+    bloque_fin <- min((i + 1) * bloques, n)
+    sample(bloque_inicio:bloque_fin, 1)
+  })
+  macddf_valid$azar[idx_1] <- 1
+  
+  # Paso 2: correr simulación con accumulate
+  initial_state <- list(stocks = 0, cash = 10000, saldo = 10000)
+  
+  sim_list_aux <- accumulate(
+    1:nrow(macddf_valid),
+    .init = initial_state,
+    .f = function(state, i) {
+      row <- macddf_valid[i, ]
+      new_state <- state
+      
+      if (!is.na(row$azar) && row$azar == 1) {
+        if (state$stocks == 0) {
+          new_state$stocks <- state$cash / row$Close
+          new_state$cash <- 0
+        } else {
+          new_state$cash <- state$stocks * row$Close
+          new_state$stocks <- 0
+        }
+      }
+      
+      new_state$saldo <- new_state$cash + new_state$stocks * row$Close
+      return(new_state)
+    }
+  )
+  
+  sim_df_aux <- bind_rows(sim_list_aux[-1])
+  
+  # Paso 3: guardar el último saldo
+  resultados[k] <- sim_df_aux$saldo[nrow(sim_df_aux)]
+}
+
+# Ver resultados
+resultados
+summary(resultados)
+
+```
+```{r}
+hist(resultados,
+     breaks = 100,  # podés ajustar el número de bins si querés más o menos detalle
+     col = "skyblue",
+     border = "white",
+     main = "Histograma del saldo final en 30 simulaciones aleatorias",
+     xlab = "Saldo final",
+     ylab = "Frecuencia")
+
+# Línea del promedio
+abline(v = mean(resultados), col = "red", lwd = 2, lty = 2)
+legend("topright", legend = paste("Media =", round(mean(resultados), 2)),
+       col = "red", lwd = 2, lty = 2, bty = "n")
+
+```
+```{r}
+saldo_estrategia <- macddf_sim$saldo[nrow(macddf_sim)]
+t.test(resultados, mu = saldo_estrategia, alternative = "less")
+
+```
+
