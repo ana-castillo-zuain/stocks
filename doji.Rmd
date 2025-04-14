@@ -769,6 +769,7 @@ resultados
 summary(resultados)
 
 ```
+
 ```{r}
 hist(resultados,
      breaks = 100,  # podés ajustar el número de bins si querés más o menos detalle
@@ -784,9 +785,195 @@ legend("topright", legend = paste("Media =", round(mean(resultados), 2)),
        col = "red", lwd = 2, lty = 2, bty = "n")
 
 ```
+
 ```{r}
 saldo_estrategia <- macddf_sim$saldo[nrow(macddf_sim)]
 t.test(resultados, mu = saldo_estrategia, alternative = "less")
 
 ```
 
+### Aplicandolo a todos los tickers
+
+```{r}
+library(dplyr)
+library(TTR)  # o library(quantmod), ya que EMA viene de ahí también
+library(purrr)
+
+# Asegurarse de que los datos estén ordenados por Ticker y Date
+datos.filt <- datos.filt %>%
+  arrange(Ticker, Date)
+
+# Función para calcular EMA(50) y EMA(200)
+calcular_emas <- function(df) {
+  df$EMA_50 <- EMA(df$Close, n = 50)
+  df$EMA_200 <- EMA(df$Close, n = 200)
+  return(df)
+}
+
+# Aplicar la función a cada grupo (ticker)
+datos.ema <- datos.filt %>%
+  group_by(Ticker) %>%
+  group_modify(~calcular_emas(.x)) %>%
+  ungroup()
+
+datos.ema
+```
+
+```{r}
+
+emadf <- datos.ema %>%
+  select(Date, Ticker, Close, EMA_50, EMA_200) %>%
+  filter(!is.na(EMA_50), !is.na(EMA_200)) %>%
+  arrange(Ticker, Date) %>%
+  group_by(Ticker) %>%
+  mutate(
+    ema50may = EMA_50 > EMA_200,
+    cross = ifelse(ema50may != lag(ema50may),
+                   ifelse(ema50may == TRUE, 1, -1),
+                   0),
+    # Agregar NA si el ticker cambia respecto al anterior
+    cross = ifelse(Ticker != lag(Ticker), NA, cross)
+  ) %>%
+  ungroup()
+
+emadf
+```
+
+```{r}
+simular_estrategia <- function(df) {
+  df <- df %>%
+    filter(!is.na(Close), !is.na(cross)) %>%
+    arrange(Date)
+  
+  if (nrow(df) == 0) return(NULL)  # evitar errores
+
+  initial_state <- list(cash = 10000, stocks = 0, saldo = 10000)
+  
+  sim_list <- purrr::accumulate(
+    1:nrow(df),
+    .init = initial_state,
+    .f = function(state, i) {
+      row <- df[i, ]
+      new_state <- state
+      
+      if (!is.na(row$cross)) {
+        if (row$cross == 1) {
+          # Golden Cross: Comprar
+          new_state$stocks <- state$cash / row$Close
+          new_state$cash <- 0
+        } else if (row$cross == -1) {
+          # Death Cross: Vender
+          new_state$cash <- state$stocks * row$Close
+          new_state$stocks <- 0
+        }
+      }
+      
+      new_state$saldo <- new_state$cash + new_state$stocks * row$Close
+      return(new_state)
+    }
+  )
+
+  sim_df <- bind_rows(sim_list[-1])  # quitar estado inicial
+  df_result <- bind_cols(df, sim_df)
+  return(df_result)
+}
+
+```
+
+```{r}
+# Dividir el dataframe por ticker
+tickers_split <- emadf %>%
+  group_by(Ticker) %>%
+  group_split()
+
+# Aplicar la simulación a cada ticker
+resultados_por_ticker <- lapply(tickers_split, simular_estrategia)
+
+# Unir todos los resultados en un único dataframe
+resultados_finales <- bind_rows(resultados_por_ticker)
+
+```
+```{r}
+
+saldo_final_por_ticker <- resultados_finales %>%
+  group_by(Ticker) %>%
+  filter(!is.na(saldo)) %>%
+  slice_tail(n = 1) %>%
+  select(Ticker, Date, saldo)
+
+print(saldo_final_por_ticker)
+
+```
+
+```{r}
+simular_estrategia_azar <- function(df, n_senales = 75) {
+  df <- df %>%
+    filter(!is.na(Close)) %>%
+    arrange(Date)
+  
+  n <- nrow(df)
+  if (n < n_senales) return(NULL)
+
+  # Inicializar columna de azar
+  df$azar <- 0
+
+  # Crear señales aleatorias distribuidas
+  bloques <- floor(n / n_senales)
+  idx_1 <- sapply(0:(n_senales - 1), function(i) {
+    bloque_inicio <- i * bloques + 1
+    bloque_fin <- min((i + 1) * bloques, n)
+    sample(bloque_inicio:bloque_fin, 1)
+  })
+  df$azar[idx_1] <- 1
+
+  # Simulación
+  initial_state <- list(cash = 10000, stocks = 0, saldo = 10000)
+  
+  sim_list <- purrr::accumulate(
+    1:n,
+    .init = initial_state,
+    .f = function(state, i) {
+      row <- df[i, ]
+      new_state <- state
+      
+      if (row$azar == 1) {
+        if (state$stocks == 0) {
+          new_state$stocks <- state$cash / row$Close
+          new_state$cash <- 0
+        } else {
+          new_state$cash <- state$stocks * row$Close
+          new_state$stocks <- 0
+        }
+      }
+      
+      new_state$saldo <- new_state$cash + new_state$stocks * row$Close
+      return(new_state)
+    }
+  )
+
+  sim_df <- bind_rows(sim_list[-1])
+  df_result <- bind_cols(df, sim_df)
+  return(df_result)
+}
+
+```
+
+```{r}
+
+# Aplicar la simulación azarosa a cada ticker
+resultados_por_ticker_azar <- lapply(tickers_split, simular_estrategia_azar)
+
+# Unir todos los resultados en un único dataframe
+resultados_finales_azar <- bind_rows(resultados_por_ticker_azar)
+
+```
+
+```{r}
+saldo_final_por_ticker_azar <- resultados_finales_azar %>%
+  group_by(Ticker) %>%
+  filter(!is.na(saldo)) %>%
+  slice_tail(n = 1) %>%
+  select(Ticker, Date, saldo)
+
+print(saldo_final_por_ticker_azar)
+```
