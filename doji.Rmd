@@ -915,8 +915,17 @@ simular_estrategia_azar <- function(df, n_senales = 75) {
   })
   df$azar[idx_1] <- 1
   
+  df_ultimas_filas <- df %>%
+    slice_tail(n = 1) %>%
+    ungroup()
+  
   df <- df %>%
     filter(azar == 1)
+  
+      
+  df <- bind_rows(df, df_ultimas_filas) %>%
+    distinct(Date, .keep_all = TRUE) %>%
+    arrange(Date)
   
   n <- nrow(df)
   
@@ -982,3 +991,71 @@ for (i in 1:n_repeticiones) {
 
 resultados_saldos_finales_azar <- bind_rows(lista_saldos_finales)
 ```
+
+# Optimizacion de EMAs
+
+```{r}
+
+calcular_saldo_final_ema <- function(df, ema1, ema2) {
+  
+  calcular_emas <- function(df, ema1, ema2) {
+    df %>%
+      mutate(
+        EMA1 = EMA(Close, n = ema1),
+        EMA2 = EMA(Close, n = ema2)
+      )
+  }
+  
+  # Uso:
+  df <- df %>%
+    group_by(Ticker) %>%
+    calcular_emas(ema1, ema2) %>%
+    ungroup()
+  
+  df <- df %>%
+    select(Date, Ticker, Close, EMA1, EMA2) %>%
+    filter(!is.na(EMA1), !is.na(EMA2)) %>%
+    arrange(Ticker, Date) %>%
+    group_by(Ticker) %>%
+    mutate(
+      ema1may = EMA1 > EMA2,
+      cross = ifelse(ema1may != lag(ema1may),
+                     ifelse(ema1may == TRUE, 1, -1),
+                     0),
+      # Agregar NA si el ticker cambia respecto al anterior
+      cross = ifelse(Ticker != lag(Ticker), NA, cross)
+    ) %>%
+    ungroup()
+  
+  df_ultimas_filas <- df %>%
+    group_by(Ticker) %>%
+    slice_tail(n = 1) %>%
+    ungroup()
+  
+  df <- df %>%
+    filter(cross != 0)
+    
+  df <- bind_rows(df, df_ultimas_filas) %>%
+    distinct(Ticker, Date, .keep_all = TRUE) %>%
+    arrange(Ticker, Date)
+  
+  df_split <- df %>%
+    group_by(Ticker) %>%
+    group_split()
+  
+  df_result <- lapply(df_split, simular_estrategia) %>%
+    bind_rows() %>%
+    group_by(Ticker) %>%
+    filter(!is.na(saldo)) %>%
+    slice_tail(n = 1)
+  
+  return(mean(df_result$saldo))
+  
+}
+
+calcular_saldo_final_ema(datos.filt, 50, 200)
+mean(saldo_final_por_ticker$saldo)
+
+
+```
+
