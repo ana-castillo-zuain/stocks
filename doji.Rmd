@@ -47,7 +47,7 @@ Fuente: https://www.kaggle.com/datasets/jakewright/9000-tickers-of-stock-market-
 # datos.filt
 # save(datos.filt,file="stock_comp")
 # Cargo datos de Empresas con la historia COMPLETA
-load(file="/Users/anapa/OneDrive/Escritorio/facu/problemas/stock_comp")
+load(file="stock_comp")
 datos.filt
 ```
 
@@ -199,19 +199,6 @@ datos.filt2.doji <- datos.filt2 %>%
 
 sum(datos.filt2.doji$dragonfly)
 sum(datos.filt2.doji$gravestone)
-```
-
-```{r}
-datos.filt2.doji <- datos.filt2 %>%
-  mutate(
-    dragonfly_true = ifelse(),
-    gravestone = ifelse(
-      (abs(Close - Open) / ((Open + Close) / 2) < 0.005) &
-      (abs(((Open + Close) / 2) - Low) / ((((Open + Close) / 2) + Low) / 2) < 0.005) &
-      (abs(((Open + Close) / 2) - High) / ((((Open + Close) / 2) + High) / 2) > 0.01),
-      1, 0
-    )
-  )
 ```
 
 ```{r}
@@ -748,7 +735,7 @@ for (k in 1:100) {
           new_state$stocks <- state$cash / row$Close
           new_state$cash <- 0
         } else {
-          new_state$cash <- state$stocks * row$Close
+          new_state$cash <- state$cash + state$stocks * row$Close
           new_state$stocks <- 0
         }
       }
@@ -863,7 +850,7 @@ simular_estrategia <- function(df) {
           new_state$cash <- 0
         } else if (row$cross == -1) {
           # Death Cross: Vender
-          new_state$cash <- state$stocks * row$Close
+          new_state$cash <- state$cash + state$stocks * row$Close
           new_state$stocks <- 0
         }
       }
@@ -893,6 +880,8 @@ resultados_por_ticker <- lapply(tickers_split, simular_estrategia)
 resultados_finales <- bind_rows(resultados_por_ticker)
 
 ```
+
+
 ```{r}
 
 saldo_final_por_ticker <- resultados_finales %>%
@@ -941,7 +930,7 @@ simular_estrategia_azar <- function(df, n_senales = 75) {
           new_state$stocks <- state$cash / row$Close
           new_state$cash <- 0
         } else {
-          new_state$cash <- state$stocks * row$Close
+          new_state$cash <- state$cash + state$stocks * row$Close
           new_state$stocks <- 0
         }
       }
