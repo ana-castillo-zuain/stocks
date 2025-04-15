@@ -914,7 +914,12 @@ simular_estrategia_azar <- function(df, n_senales = 75) {
     sample(bloque_inicio:bloque_fin, 1)
   })
   df$azar[idx_1] <- 1
-
+  
+  df <- df %>%
+    filter(azar == 1)
+  
+  n <- nrow(df)
+  
   # Simulación
   initial_state <- list(cash = 10000, stocks = 0, saldo = 10000)
   
@@ -925,14 +930,12 @@ simular_estrategia_azar <- function(df, n_senales = 75) {
       row <- df[i, ]
       new_state <- state
       
-      if (row$azar == 1) {
-        if (state$stocks == 0) {
-          new_state$stocks <- state$cash / row$Close
-          new_state$cash <- 0
-        } else {
-          new_state$cash <- state$cash + state$stocks * row$Close
-          new_state$stocks <- 0
-        }
+      if (state$stocks == 0) {
+        new_state$stocks <- state$cash / row$Close
+        new_state$cash <- 0
+      } else {
+        new_state$cash <- state$cash + state$stocks * row$Close
+        new_state$stocks <- 0
       }
       
       new_state$saldo <- new_state$cash + new_state$stocks * row$Close
@@ -948,21 +951,34 @@ simular_estrategia_azar <- function(df, n_senales = 75) {
 ```
 
 ```{r}
+library(progress)
 
-# Aplicar la simulación azarosa a cada ticker
-resultados_por_ticker_azar <- lapply(tickers_split, simular_estrategia_azar)
+n_repeticiones <- 100
+lista_saldos_finales <- list()
 
-# Unir todos los resultados en un único dataframe
-resultados_finales_azar <- bind_rows(resultados_por_ticker_azar)
+# Crear barra de progreso
+pb <- progress_bar$new(
+  format = "[:bar] :percent | Iteración :current/:total | Tiempo restante: :eta",
+  total = n_repeticiones,
+  clear = FALSE,
+  width = 60
+)
 
-```
+for (i in 1:n_repeticiones) {
+  pb$tick()  # Actualizar barra
+  
+  # Simular estrategia para todos los tickers
+  resultados_iteracion <- lapply(tickers_split, simular_estrategia_azar) %>% 
+    bind_rows()
+  
+  # Extraer saldos finales
+  lista_saldos_finales[[i]] <- resultados_iteracion %>%
+    group_by(Ticker) %>%
+    filter(!is.na(saldo)) %>%
+    slice_tail(n = 1) %>%
+    select(Ticker, Date, saldo)
+  
+}
 
-```{r}
-saldo_final_por_ticker_azar <- resultados_finales_azar %>%
-  group_by(Ticker) %>%
-  filter(!is.na(saldo)) %>%
-  slice_tail(n = 1) %>%
-  select(Ticker, Date, saldo)
-
-print(saldo_final_por_ticker_azar)
+resultados_saldos_finales_azar <- bind_rows(lista_saldos_finales)
 ```
