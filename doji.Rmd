@@ -996,7 +996,7 @@ resultados_saldos_finales_azar <- bind_rows(lista_saldos_finales)
 
 ```{r}
 
-calcular_saldo_final_ema <- function(df, ema1, ema2) {
+calcular_saldo_final_ema <- function(df=datos.filt, ema1, ema2) {
   
   calcular_emas <- function(df, ema1, ema2) {
     df %>%
@@ -1052,10 +1052,64 @@ calcular_saldo_final_ema <- function(df, ema1, ema2) {
   return(mean(df_result$saldo))
   
 }
+```
 
-calcular_saldo_final_ema(datos.filt, 50, 200)
-mean(saldo_final_por_ticker$saldo)
+```{r}
+library(progress)
+library(reshape2)
 
+ema1 <- seq(10, 250, by = 10)    
+ema2 <- seq(150, 400, by = 10)
+
+# Crear matriz vacía
+matriz_resultados <- matrix(
+  nrow = length(ema1),
+  ncol = length(ema2),
+  dimnames = list(paste0("EMA1_", ema1), paste0("EMA2_", ema2))
+)
+
+pb <- progress_bar$new(
+  format = "[:bar] :percent | Fila: :current/:total | Tiempo: :elapsedfull",
+  total = length(ema1) * length(ema2),  # Total de iteraciones
+  clear = FALSE,
+  width = 60
+)
+
+# Llenar la matriz con mapply
+for (i in seq_along(ema1)) {
+  for (j in seq_along(ema2)) {
+    if (ema1[i] >= ema2[j]) {
+      matriz_resultados[i, j] <- NA
+    } else {
+      matriz_resultados[i, j] <- calcular_saldo_final_ema(datos.filt, ema1[i], ema2[j])
+    }
+    
+    
+    pb$tick()
+  }
+}
+```
+```{r}
+library(plotly)
+
+plot_ly(
+  z = ~matriz_resultados,
+  x = colnames(matriz_resultados),
+  y = rownames(matriz_resultados),
+  colorscale = list(
+    c(0, "blue"),    # Mínimo: azul
+    c(0.5, "white"), # Medio: blanco (ajusta el 0.5 según tus datos)
+    c(1, "red")      # Máximo: rojo
+  ),
+  hovertemplate = paste(  # Formato personalizado para el tooltip
+    "Fila: %{y}<br>",
+    "Columna: %{x}<br>",
+    "Valor: %{z:.2e}<extra></extra>"  # %{z:,} añade separadores de miles
+  ),
+  type = "heatmap"
+) %>%
+  layout(title = "Promedio en base a EMAs")
 
 ```
+
 
