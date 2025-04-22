@@ -981,23 +981,4 @@ for (i in 1:n_repeticiones) {
 }
 
 resultados_saldos_finales_azar <- bind_rows(lista_saldos_finales)
-resultados_saldos_finales_azar
 ```
-```{r}
-# Paso 1: Calcular el promedio de cada ticker en las simulaciones
-resultado_promedios <- resultados_saldos_finales_azar %>%
-  group_by(Ticker) %>%
-  summarise(saldo_azar = mean(saldo))
-
-# Paso 2: Unir con el saldo de la estrategia
-comparacion <- saldo_final_por_ticker %>%
-  select(Ticker, saldo_estrategia = saldo) %>%
-  inner_join(resultado_promedios, by = "Ticker")
-
-# Paso 3: Test t pareado (una cola)
-t.test(comparacion$saldo_estrategia, comparacion$saldo_azar,
-       paired = TRUE,
-       alternative = "greater")
-
-```
-
