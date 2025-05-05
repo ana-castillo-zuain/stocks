@@ -179,7 +179,7 @@ No puede haber mas ventas que compras (no se puede shortear)
 Al final del periodo se vende todo el stock (si hubiera)
 El resultado (target) es el saldo al final del 
 
-Deteccion de dojis
+# Deteccion de dojis
 ```{r}
 datos.filt2.doji <- datos.filt2 %>%
   mutate(
@@ -200,6 +200,8 @@ datos.filt2.doji <- datos.filt2 %>%
 sum(datos.filt2.doji$dragonfly)
 sum(datos.filt2.doji$gravestone)
 ```
+
+## Calculo de proporciones poblacionales
 
 ```{r}
 datos.filt2.doji <- datos.filt2.doji %>%
@@ -225,6 +227,8 @@ p_pob_decrease
 p_grave_decrease
 ```
 
+## Calculo de la diferencia porcentual
+
 ```{r}
 datos.filt2.doji <- datos.filt2.doji %>%
   mutate(porc_diff_nd = ifelse(is.na(lead(Close)), 0, (lead(Close) - Close)/Close))
@@ -242,6 +246,7 @@ datos.filt2.doji.grave <- datos.filt2.doji %>%
 mean_grave_diff <- mean(datos.filt2.doji.grave$porc_diff_nd)
 ```
 
+### Aplicandolo a dias posteriores
 
 ```{r}
 library(dplyr)
@@ -283,6 +288,8 @@ tabla_doji <- calcular_dif_porcentual(datos.filt2.doji)
 print(tabla_doji)
 
 ```
+
+### Distribucion de las diferencias porcentuales entre dojis
 ```{r}
 
 datos.filt2.doji.gd <- datos.filt2.doji %>%
@@ -295,7 +302,7 @@ ggplot(datos.filt2.doji.gd, aes(x = factor(dragonfly)
   labs(title = "")
 
 ```
-
+### Grafico de densidad para dojis
 ```{r}
 library(ggplot2)
 library(dplyr)
@@ -317,7 +324,7 @@ ggplot(datos.filt2.doji.gd, aes(x = porc_diff_nd, color = factor(dragonfly + 2 *
 
 ```
 
-### Ampliamos la muestra
+## Ampliamos la muestra
 
 ```{r}
 
@@ -344,7 +351,7 @@ muestra.doji <- muestra %>%
 sum(muestra.doji$dragonfly)
 sum(muestra.doji$gravestone)
 ```
-
+### Proporciones poblacionales para la muestra ampliada
 ```{r}
 muestra.doji <- muestra.doji %>%
   mutate(increase_nd = ifelse(is.na(lead(Close)), FALSE, Close < lead(Close))) %>%
@@ -369,6 +376,9 @@ p_dragon_increase
 p_pob_decrease
 p_grave_decrease
 ```
+
+### Diferencias porcentuales para la muestra ampliada
+
 ```{r}
 muestra.doji <- muestra.doji %>%
   mutate(porc_diff_nd = ifelse(is.na(lead(Close)), 0, (lead(Close) - Close)/Close))
@@ -423,6 +433,9 @@ calcular_dif_porcentual <- function(datos) {
 tabla_acciones <- calcular_dif_porcentual(muestra.doji)
 print(tabla_acciones)
 ```
+
+### Graficos para la muestra ampliada
+
 ```{r}
 muestra.doji.gd <- muestra.doji %>%
   filter(dragonfly == 1 | gravestone == 1)
@@ -448,7 +461,8 @@ ggplot(muestra.doji.gd, aes(x = porc_diff_nd, color = factor(dragonfly + 2 * gra
   theme_minimal()
 
 ```
-###Test de Hipotesis
+
+## Test de Hipotesis
 
 Para cada tipo de Doji, compararemos la proporción observada con la proporción general de la población utilizando una prueba de proporciones.
 
@@ -460,8 +474,6 @@ Ha: La probabilidad de aumento después de un Dragonfly Doji es diferente de la 
 Hipótesis para Gravestone Doji
 H0: La probabilidad de disminución después de un Gravestone Doji es igual a la probabilidad general de disminución (pgrave = ppob)
 Ha: La probabilidad de disminución después de un Gravestone Doji es diferente de la probabilidad general (pgrave != ppob)
-
-Prueba estadística
 
 ```{r}
 # Calcular proporciones generales
@@ -540,6 +552,7 @@ test_grave2 <- prop.test(n_grave2 - x_grave2, n_grave2, p = p_pob_decrease2, alt
 test_dragon2
 test_grave2
 ```
+
 ```{r}
 # Calcular la media poblacional general
 pob_mean <- mean(datos.filt.doji$porc_diff_nd)
@@ -558,7 +571,8 @@ test_grave3 <- t.test(datos.filt.grave$porc_diff_nd,
 test_dragon3
 test_grave3
 ```
-### MACD
+
+## Golden y Death Cross
 
 ```{r}
 # Load necessary library
@@ -574,6 +588,9 @@ df_xts <- xts(datos.filt2[, -c(1,2)], order.by = datos.filt2$Date)
 print(df_xts)
 
 ```
+
+### Calculamos los EMAs
+
 ```{r}
 
 macd50 <- EMA(df_xts$Close, 50)
@@ -584,6 +601,9 @@ macd50
 macd200
 #resta de los dos
 ```
+
+### Identificamos las cruces
+
 ```{r}
 library(xts)
 
@@ -604,6 +624,10 @@ macddf_cross <- macddf %>%
 golden <- count(macddf_cross, cross == 1)
 
 ```
+
+### Simulacion de estrategias
+ 
+Simulamos una estrategia de trading basada en los resultados
 
 ```{r}
 macddf_valid <- macddf %>%
@@ -646,6 +670,8 @@ sim_list <- accumulate(
 sim_df <- bind_rows(sim_list[-1])  # sacar .init
 macddf_sim <- bind_cols(macddf_valid, sim_df)
 ```
+
+Simulamos una estrategia de trading azarosa
 
 ```{r}
 
@@ -700,6 +726,8 @@ sim_df_aux <- bind_rows(sim_list_aux[-1])  # sacar .init
 macddf_sim_azar <- bind_cols(macddf_valid, sim_df_aux)
 ```
 
+Ahora lo repetimos 100 veces
+
 ```{r}
 library(purrr)
 library(dplyr)
@@ -707,7 +735,7 @@ library(dplyr)
 # Lista para guardar los resultados finales de saldo
 resultados <- numeric(100)
 
-# Loop de 30 repeticiones
+# Loop de 100 repeticiones
 for (k in 1:100) {
   # Paso 1: generar señales azarosas distribuidas
   n <- nrow(macddf_valid)
@@ -757,9 +785,11 @@ summary(resultados)
 
 ```
 
+Grafico de la distribucion de los resultados de la estrategia azarosa
+
 ```{r}
 hist(resultados,
-     breaks = 100,  # podés ajustar el número de bins si querés más o menos detalle
+     breaks = 100,  
      col = "skyblue",
      border = "white",
      main = "Histograma del saldo final en 30 simulaciones aleatorias",
@@ -772,6 +802,9 @@ legend("topright", legend = paste("Media =", round(mean(resultados), 2)),
        col = "red", lwd = 2, lty = 2, bty = "n")
 
 ```
+
+
+Test de Hipotesis para las estrategias
 
 ```{r}
 saldo_estrategia <- macddf_sim$saldo[nrow(macddf_sim)]
@@ -993,7 +1026,8 @@ resultados_saldos_finales_azar <- bind_rows(lista_saldos_finales)
 resultados_saldos_finales_azar
 ```
 
-### Test de Hipotesis Estrategias
+#### Test de Hipotesis Estrategias
+
 ```{r}
 # Paso 1: Calcular el promedio de cada ticker en las simulaciones
 resultado_promedios <- resultados_saldos_finales_azar %>%
@@ -1129,7 +1163,7 @@ plot_ly(
 
 ```
 
-### Matriz de cantidad de operaciones
+## Matriz de cantidad de operaciones
 
 ```{r}
 calcular_operaciones_ema <- function(df=datos.filt, ema1, ema2) {
