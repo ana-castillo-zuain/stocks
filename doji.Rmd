@@ -1,6 +1,7 @@
 ---
 title: "Analisis Acciones"
 output:
+  pdf_document: default
   html_document:
     df_print: paged
 ---
@@ -1256,6 +1257,13 @@ plot_ly(
   type = "heatmap"
 ) %>%
   layout(title = "Operaciones promedio en base a EMAs")
+
 ```
 
+# Conclusion
 
+Los resultados del análisis sugieren que, en términos estadísticos, los patrones Doji no representan un indicador confiable para anticipar cambios significativos en la tendencia del precio de las acciones. Las pruebas de hipótesis realizadas no mostraron diferencias consistentes en los rendimientos posteriores a la aparición de estos patrones, lo que indica que su valor predictivo es limitado cuando se consideran de forma aislada.
+
+En contraste, las estrategias basadas en cruces de medias móviles —particularmente el "golden cross" y el "death cross"— mostraron mayor efectividad, con diferencias estadísticamente significativas en los rendimientos observados tras la señal. Esto refuerza la idea de que los cruces de promedios móviles pueden ser herramientas más robustas dentro del análisis técnico, al ofrecer señales que reflejan mejor la dinámica de largo plazo del mercado.
+
+En resumen, mientras que los Dojis pueden tener valor como señales complementarias dentro de un contexto más amplio, los cruces de medias móviles demostraron ser indicadores más consistentes y útiles para tomar decisiones informadas en el análisis de acciones.
