@@ -1026,6 +1026,11 @@ for (i in 1:n_repeticiones) {
 resultados_saldos_finales_azar <- bind_rows(lista_saldos_finales)
 resultados_saldos_finales_azar
 ```
+```{r}
+prueba <- resultados_saldos_finales_azar %>% filter(Ticker == 'IBM')
+
+prueba2 <- saldo_final_por_ticker %>% filter(Ticker == 'IBM')
+```
 
 #### Test de Hipotesis Estrategias
 
@@ -1046,6 +1051,53 @@ t.test(comparacion$saldo_estrategia, comparacion$saldo_azar,
        alternative = "greater")
 
 ```
+```{r}
+
+# Inicializamos un data frame vacío para guardar resultados
+p_values <- data.frame(Ticker = character(),
+                                   p_value = numeric(),
+                                   stringsAsFactors = FALSE)
+
+# Iteramos por cada ticker en saldo_final_por_ticker
+for (i in 1:nrow(saldo_final_por_ticker)) {
+  ticker_actual <- saldo_final_por_ticker$Ticker[i]
+  saldo_estrategia <- saldo_final_por_ticker$saldo[i]
+  
+  # Filtramos los saldos simulados del mismo ticker
+  saldos_azar <- resultados_saldos_finales_azar %>%
+    filter(Ticker == ticker_actual) %>%
+    pull(saldo)
+  
+  # Realizamos test t (una cola, H1: estrategia > azar → usamos "less" contra estrategia)
+  test <- t.test(saldos_azar, mu = saldo_estrategia, alternative = "less")
+  
+  # Guardamos el resultado
+  p_values <- rbind(p_values, data.frame(Ticker = ticker_actual, p_value = test$p.value))
+}
+
+# Ver resultados
+print(p_values)
+
+
+
+
+```
+```{r}
+
+hist(p_values$p_value,
+     breaks = 100,  
+     col = "skyblue",
+     border = "white",
+     main = "Histograma de p-values para los tickers",
+     xlab = "p-values",
+     ylab = "Frecuencia")
+
+# Línea del promedio
+abline(v = mean(p_values$p_value), col = "red", lwd = 2, lty = 2)
+legend("topright", legend = paste("Media =", round(mean(p_values$p_value), 2)),
+       col = "red", lwd = 2, lty = 2, bty = "n")
+```
+
 
 # Optimizacion de EMAs
 
