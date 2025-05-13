@@ -1032,7 +1032,7 @@ prueba <- resultados_saldos_finales_azar %>% filter(Ticker == 'IBM')
 prueba2 <- saldo_final_por_ticker %>% filter(Ticker == 'IBM')
 ```
 
-#### Test de Hipotesis Estrategias
+### Test de Hipotesis Estrategias
 
 ```{r}
 # Paso 1: Calcular el promedio de cada ticker en las simulaciones
@@ -1096,6 +1096,144 @@ hist(p_values$p_value,
 abline(v = mean(p_values$p_value), col = "red", lwd = 2, lty = 2)
 legend("topright", legend = paste("Media =", round(mean(p_values$p_value), 2)),
        col = "red", lwd = 2, lty = 2, bty = "n")
+```
+#### Analisis de tickers con p values anomalos
+```{r}
+library(dplyr)
+library(TTR) # Para EMA
+library(zoo) # Para index()
+
+ibm <- datos.filt %>% filter(Ticker == "IBM")
+ip <- datos.filt %>% filter(Ticker == "IP")
+
+ibm50 <- EMA(ibm$Close, 50)
+ibm200 <- EMA(ibm$Close, 200)
+
+ip50 <- EMA(ip$Close, 50)
+ip200 <- EMA(ip$Close, 200)
+
+
+emaibm <- data.frame(
+  Date = ibm$Date, 
+  ema50 = ibm50,
+  ema200 = ibm200
+)
+
+emaibm <- emaibm %>%
+  mutate(
+    ema50may = ema50 > ema200,
+    cross = ifelse(ema50may != lag(ema50may), 
+                   ifelse(ema50may == TRUE, 1, -1), 
+                   0)
+  ) %>%
+  left_join(ibm, by = "Date")
+
+emaibm_cross <- emaibm %>%
+  filter(cross != 0)
+
+goldenibm <- count(emaibm_cross, cross == 1)
+
+# Repetir para IP
+emaip <- data.frame(
+  Date = ip$Date,
+  ema50 = ip50,
+  ema200 = ip200
+)
+
+emaip <- emaip %>%
+  mutate(
+    ema50may = ema50 > ema200,
+    cross = ifelse(ema50may != lag(ema50may), 
+                   ifelse(ema50may == TRUE, 1, -1), 
+                   0)
+  ) %>%
+  left_join(ip, by = "Date")
+
+emaip_cross <- emaip %>%
+  filter(cross != 0)
+
+goldenip <- count(emaip_cross, cross == 1)
+goldenibm
+goldenip
+```
+```{r}
+emaibm_valid <- emaibm %>%
+  filter(!is.na(Close), !is.na(cross))
+
+emaip_valid <- emaip %>%
+  filter(!is.na(Close), !is.na(cross))
+
+initial_state <- list(
+  cash = 10000,
+  stocks = 0,
+  saldo = 10000
+)
+
+# Acumulador paso a paso (IBM)
+sim_ibm <- accumulate(
+  1:nrow(emaibm_valid),
+  .init = initial_state,
+  .f = function(state, i) {
+    row <- emaibm_valid[i, ]
+    
+    new_state <- state
+
+    if (!is.na(row$cross)) {
+      if (row$cross == 1) {
+        # Golden Cross → Comprar con todo el cash
+        new_state$stocks <- state$cash / row$Close
+        new_state$cash <- 0
+      } else if (row$cross == -1) {
+        # Death Cross → Vender todo
+        new_state$cash <- state$stocks * row$Close
+        new_state$stocks <- 0
+      }
+    }
+
+    # Recalcular el saldo total
+    new_state$saldo <- new_state$cash + new_state$stocks * row$Close
+    return(new_state)
+  }
+)
+
+# Convertir lista de estados a data frame
+sim_df_ibm <- bind_rows(sim_ibm[-1])  # sacar .init
+simulacion_ibm <- bind_cols(emaibm_valid, sim_ibm)
+
+
+# IP
+sim_ip <- accumulate(
+  1:nrow(emaip_valid),
+  .init = initial_state,
+  .f = function(state, i) {
+    row <- emaip_valid[i, ]
+    
+    new_state <- state
+
+    if (!is.na(row$cross)) {
+      if (row$cross == 1) {
+        # Golden Cross → Comprar con todo el cash
+        new_state$stocks <- state$cash / row$Close
+        new_state$cash <- 0
+      } else if (row$cross == -1) {
+        # Death Cross → Vender todo
+        new_state$cash <- state$stocks * row$Close
+        new_state$stocks <- 0
+      }
+    }
+
+    # Recalcular el saldo total
+    new_state$saldo <- new_state$cash + new_state$stocks * row$Close
+    return(new_state)
+  }
+)
+
+# Convertir lista de estados a data frame
+sim_ip_df <- bind_rows(sim_ip[-1])  # sacar .init
+simulacion_ip <- bind_cols(emaip_valid, sim_ip)
+
+simulacion_ip
+simulacion_ibm
 ```
 
 
